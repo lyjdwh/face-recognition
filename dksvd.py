@@ -1,28 +1,27 @@
 import numpy as np
 import scipy as sp
 import scipy.linalg as splin
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import orthogonal_mp_gram
 
 
-class DKSVD(object):
-    def __init__(self, dictsize, max_iter=10, tol=1e-6, sparsitythres=None):
+class DKSVD(BaseEstimator, ClassifierMixin):
+    def __init__(self, dictsize=200, n_iter=10, tol=1e-6, sparsitythres=None):
         """
         Input
         ----------
         dictsize: Number of dictionary elements
-        max_iter: Maximum number of iterations
+        n_iter: Maximum number of iterations
         tol: tolerance for error
         sparsitythres: sparsity threshold
         """
-        self.D_ = None
-        self.C_ = None
-        self.max_iter = max_iter
+        self.n_iter = n_iter
         self.tol = tol
         self.dictsize = dictsize
-        self.transform_n_nonzero_coefs = sparsitythres
+        self.sparsitythres = sparsitythres
 
     def _update_dict(self, Y, D, X):
-        for j in range(self.n_components):
+        for j in range(self.dictsize):
             wk = X[j, :] > 0
             if sp.sum(wk) == 0:
                 continue
@@ -38,10 +37,10 @@ class DKSVD(object):
         return D, X
 
     def _initialize(self, Y):
-        if min(Y.shape) < self.n_components:
-            D = sp.random.randn(Y.shape[0], self.n_components)
+        if min(Y.shape) < self.dictsize:
+            D = sp.random.randn(Y.shape[0], self.dictsize)
         else:
-            u, s, vt = sp.sparse.linalg.svds(Y, k=self.n_components)
+            u, s, vt = sp.sparse.linalg.svds(Y, k=self.dictsize)
             D = sp.dot(u, sp.diag(s))
         D /= splin.norm(D, axis=0)[sp.newaxis, :]
         return D
@@ -50,7 +49,7 @@ class DKSVD(object):
         gram = D.T.dot(D)
         Xy = D.T.dot(Y)
 
-        n_nonzero_coefs = self.transform_n_nonzero_coefs
+        n_nonzero_coefs = self.sparsitythres
         if n_nonzero_coefs is None:
             n_nonzero_coefs = int(0.1 * Y.shape[1])
 
@@ -64,7 +63,7 @@ class DKSVD(object):
         Input
         ----------
         Y: data. (shape = [n_features, n_samples])
-        Dinit: initialization of dictionary. (shape = [n_features, n_components])
+        Dinit: initialization of dictionary. (shape = [n_features, dictsize])
         Outputs
         ----------
         D: dictionary
@@ -75,7 +74,7 @@ class DKSVD(object):
         else:
             D = Dinit / splin.norm(Dinit, axis=0)[sp.newaxis, :]
 
-        for i in range(self.max_iter):
+        for i in range(self.n_iter):
             X = self._transform(D, Y)
             e = splin.norm(Y - D.dot(X))
             if e < self.tol:
@@ -96,18 +95,32 @@ class DKSVD(object):
         Dinit           -initial guess for dictionary
         """
 
+        self.classes_, labels = np.unique(labels, return_inverse=True)
+
         H_train = sp.zeros((int(labels.max()), training_feats.shape[1]), dtype=float)
         for c in range(int(labels.max())):
             H_train[c, labels == (c + 1)] = 1.0
 
         W = np.concatenate((training_feats, H_train), axis=0)
         P, X = self._ksvd_fit(W, Dinit)
-        self._D = P[: training_feats.shape[0], :]
-        self._C = P[training_feats.shape[0] :, :]
-        self._D /= splin.norm(self._D, axis=0)[sp.newaxis, :]
-        self._C /= splin.norm(self._C, axis=0)[sp.newaxis, :]
+        self.D_ = P[: training_feats.shape[0], :]
+        self.C_ = P[training_feats.shape[0] :, :]
+        self.D_ /= splin.norm(self.D_, axis=0)[sp.newaxis, :]
+        self.C_ /= splin.norm(self.C_, axis=0)[sp.newaxis, :]
+        return self
 
     def predict(self, Y):
-        X = self._transform(self._D, Y)
-        L = sp.dot(self._C, X)
+        X = self._transform(self.D_, Y)
+        L = sp.dot(self.C_, X)
         return L.argmax(L, 0)
+
+
+if __name__ == "__main__":
+    """
+    1. 5fold交叉验证 参数选择
+    2. 训练流程
+    3. 每组实验重复 10 次,训练结果(验证集和测试集平均精度和每幅图片平均时间)
+    4. 保存模型
+    5. 并行
+    """
+    pass
