@@ -7,6 +7,7 @@ from data import Data
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import orthogonal_mp_gram
 from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import normalize
 
 
 class DKSVD(BaseEstimator, ClassifierMixin):
@@ -34,7 +35,7 @@ class DKSVD(BaseEstimator, ClassifierMixin):
             Ekr = Y[:, wk] - D.dot(X[:, wk])
             u, s, vt = splin.svd(Ekr)
             d = u[:, 0]
-            d /= splin.norm(d)
+            d = normalize(d, axis=0)
             D[:, j] = d
             X[j, :] = sp.dot(vt.T[:, 0], s[0, 0])
 
@@ -46,11 +47,14 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         else:
             u, s, vt = sp.sparse.linalg.svds(Y, k=self.dictsize)
             D = sp.dot(u, sp.diag(s))
-        D /= splin.norm(D, axis=0)[sp.newaxis, :]
+        D = normalize(D, axis=0)
+
         return D
 
     def _transform(self, D, Y):
+
         gram = D.T.dot(D)
+
         Xy = D.T.dot(Y)
 
         n_nonzero_coefs = self.sparsitythres
@@ -76,7 +80,7 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         if Dinit is None:
             D = self._initialize(Y)
         else:
-            D = Dinit / splin.norm(Dinit, axis=0)[sp.newaxis, :]
+            D = normalize(Dinit, axis=0)
 
         for i in range(self.n_iter):
             X = self._transform(D, Y)
@@ -87,9 +91,7 @@ class DKSVD(BaseEstimator, ClassifierMixin):
 
         return D, X
 
-    def fit(
-        self, training_feats, labels, Dinit=None,
-    ):
+    def fit(self, training_feats, labels, Dinit=None):
 
         """
         Input
@@ -107,11 +109,12 @@ class DKSVD(BaseEstimator, ClassifierMixin):
             H_train[c, labels == (c + 1)] = 1.0
 
         W = np.concatenate((training_feats, H_train), axis=0)
+
         P, X = self._ksvd_fit(W, Dinit)
         self.D_ = P[: training_feats.shape[0], :]
         self.C_ = P[training_feats.shape[0] :, :]
-        self.D_ /= splin.norm(self.D_, axis=0)[sp.newaxis, :]
-        self.C_ /= splin.norm(self.C_, axis=0)[sp.newaxis, :]
+        self.D_ = normalize(self.D_, axis=0)
+        self.C_ = normalize(self.C_, axis=0)
         return self
 
     def predict(self, Y):
