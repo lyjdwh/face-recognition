@@ -1,30 +1,25 @@
+import numpy as np
 import scipy as sp
 import scipy.linalg as splin
 from sklearn.linear_model import orthogonal_mp_gram
 
 
 class DKSVD(object):
-    def __init__(
-        self, n_components, max_iter=10, tol=1e-6, transform_n_nonzero_coefs=None
-    ):
+    def __init__(self, dictsize, max_iter=10, tol=1e-6, sparsitythres=None):
         """
-    Parameters
-    ----------
-    n_components:
-        Number of dictionary elements
-    max_iter:
-        Maximum number of iterations
-    tol:
-        tolerance for error
-    transform_n_nonzero_coefs:
-        Number of nonzero coefficients to target
-    """
+        Input
+        ----------
+        dictsize: Number of dictionary elements
+        max_iter: Maximum number of iterations
+        tol: tolerance for error
+        sparsitythres: sparsity threshold
+        """
         self.D_ = None
-        self.X_ = None
+        self.C_ = None
         self.max_iter = max_iter
         self.tol = tol
-        self.n_components = n_components
-        self.transform_n_nonzero_coefs = transform_n_nonzero_coefs
+        self.dictsize = dictsize
+        self.transform_n_nonzero_coefs = sparsitythres
 
     def _update_dict(self, Y, D, X):
         for j in range(self.n_components):
@@ -63,14 +58,18 @@ class DKSVD(object):
             gram, Xy, copy_Gram=False, copy_Xy=False, n_nonzero_coefs=n_nonzero_coefs
         )
 
-    def fit(self, Y, Dinit=None):
+    def _ksvd_fit(self, Y, Dinit=None):
         """
-    Use data to learn dictionary and activations.
-    Parameters
-    ----------
-    Y: data. (shape = [n_features, n_samples])
-    Dinit: initialization of dictionary. (shape = [n_features, n_components])
-    """
+        Use data to learn dictionary and activations.
+        Input
+        ----------
+        Y: data. (shape = [n_features, n_samples])
+        Dinit: initialization of dictionary. (shape = [n_features, n_components])
+        Outputs
+        ----------
+        D: dictionary
+        X: Sparse representation
+        """
         if Dinit is None:
             D = self._initialize(Y)
         else:
@@ -83,9 +82,32 @@ class DKSVD(object):
                 break
             D, X = self._update_dict(Y, D, X)
 
-        self.D_ = D
-        self.X_ = X
-        return self
+        return D, X
 
-    def transform(self, X):
-        return self._transform(self.D_, X)
+    def fit(
+        self, training_feats, labels, Dinit=None,
+    ):
+
+        """
+        Input
+        ----------
+        training_feats  -training features (shape = [n_features, n_samples])
+        labels          -label matrix for training feature (numberred from 1 to nb of classes)
+        Dinit           -initial guess for dictionary
+        """
+
+        H_train = sp.zeros((int(labels.max()), training_feats.shape[1]), dtype=float)
+        for c in range(int(labels.max())):
+            H_train[c, labels == (c + 1)] = 1.0
+
+        W = np.concatenate((training_feats, H_train), axis=0)
+        P, X = self._ksvd_fit(W, Dinit)
+        self._D = P[: training_feats.shape[0], :]
+        self._C = P[training_feats.shape[0] :, :]
+        self._D /= splin.norm(self._D, axis=0)[sp.newaxis, :]
+        self._C /= splin.norm(self._C, axis=0)[sp.newaxis, :]
+
+    def predict(self, Y):
+        X = self._transform(self._D, Y)
+        L = sp.dot(self._C, X)
+        return L.argmax(L, 0)
