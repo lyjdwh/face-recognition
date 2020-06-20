@@ -1,8 +1,12 @@
+import time
+
 import numpy as np
 import scipy as sp
 import scipy.linalg as splin
+from data import Data
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import orthogonal_mp_gram
+from sklearn.model_selection import GridSearchCV
 
 
 class DKSVD(BaseEstimator, ClassifierMixin):
@@ -128,4 +132,23 @@ if __name__ == "__main__":
     4. 保存模型
     5. 并行
     """
-    pass
+    dictsizes = [200, 400, 600]
+    ps = [7, 13, 20]
+    for i in range(len(dictsizes)):
+        dictsize = dictsizes[i]
+        p = ps[i]
+        param_grid = {
+            "dictsize": [dictsize],
+            "n_iter": [50],
+            "tol": [1e-6],
+            "sparsitythres": np.linspace(10, 50, 9),
+        }
+
+        fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=1, n_jobs=10)
+        data = Data(p=p)
+        features, labels = data.get_data()
+
+        fivefolds.fit(features, labels)
+
+        print("The best estimator found by GridSearch:")
+        print(fivefolds.best_estimator_)
