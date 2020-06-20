@@ -90,10 +90,11 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         """
         Input
         ----------
-        training_feats  -training features (shape = [n_features, n_samples])
+        training_feats  -training features (shape = [n_samples, n_features])
         labels          -label matrix for training feature (numberred from 1 to nb of classes)
         Dinit           -initial guess for dictionary
         """
+        training_feats = training_feats.T
 
         self.classes_, labels = np.unique(labels, return_inverse=True)
 
@@ -110,9 +111,13 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         return self
 
     def predict(self, Y):
+        """
+        predict single data
+        """
+        Y = Y[np.newaxis, :].T
         X = self._transform(self.D_, Y)
         L = sp.dot(self.C_, X)
-        return L.argmax(L, 0)
+        return self.classes_[L.argmax(axis=0)][0]
 
 
 if __name__ == "__main__":
