@@ -9,12 +9,18 @@ import glob
 from PIL import Image
 
 import numpy as np
+from sklearn.model_selection import KFold, train_test_split
 
 
 class Data(object):
-    def __init__(self, fold):
+    def __init__(self, fold, p):
         self.fold = fold
+        self.p = p  # 7, 13, 70
         self.data = dict()
+        self.labels = np.zeros(2470, dtype=np.int16)
+        self.features = np.zeros((2470, 2016))
+        self.test_x = None
+        self.test_y = None
 
     def preprocess(self):
         """
@@ -23,18 +29,29 @@ class Data(object):
         face_pathes = glob.glob(r"data/*")
         face_names = [path.split("/")[1] for path in face_pathes]
 
+        index = 0
         for face_name in face_names:
             faces = glob.glob("data/%s/*.pgm" % face_name)
             face_class = face_name[-2:]
-            self.data[face_class] = list()
+            self.labels[index] = int(face_class)
             for face in faces:
                 image = Image.open(face)
                 image = image.resize((48, 42))
                 image = np.asarray(image)
-                self.data[face_class].append(image.flatten())
+                self.features[index, :] = image.flatten()
+                index += 1
 
-    def get_svm_data(self):
-        pass
+        assert index == 2470
 
-    def get_xs_data(self, p):
-        pass
+    def get_val_test_data(self):
+        train_x, self.test_x, train_y, self.test_y = train_test_split(
+            self.features, self.labels, train_size=self.p * 38, shuffle=True
+        )
+        kf = KFold(n_splits=self.fold)
+        for val_index, test_index in kf.split(train_x):
+            train_x, val_x = train_x[val_index], train_x[test_index]
+            train_y, val_y = train_y[val_index], train_y[test_index]
+            yield train_x.T, val_x.T, train_y, val_y
+
+    def get_test_data(self):
+        return self.test_x.T, self.test_y
