@@ -1,13 +1,21 @@
 import time
 
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import scipy.linalg as splin
 from data import Data
 from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.externals import joblib
 from sklearn.linear_model import orthogonal_mp_gram
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, learning_curve
 from sklearn.preprocessing import normalize
+
+
+def compute_accuracy(test_x, test_y, model):
+    predict_y = model.predict(test_x)
+    accuracy = sum(predict_y == test_y) / len(test_y)
+    return accuracy
 
 
 class DKSVD(BaseEstimator, ClassifierMixin):
@@ -62,7 +70,7 @@ class DKSVD(BaseEstimator, ClassifierMixin):
             gram, Xy, copy_Gram=False, copy_Xy=False, n_nonzero_coefs=n_nonzero_coefs
         )
 
-    def _ksvd_fit(self, Y, Dinit=None):
+    def _ksvd_fit(self, Y, Dinit=None, islog=True):
         """
         Use data to learn dictionary and activations.
         Input
@@ -79,24 +87,30 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         else:
             D = normalize(Dinit, axis=0)
 
+        self.tes_ = list()
+        self.ves_ = list()
         for i in range(self.n_iter):
             X = self._transform(D, Y)
             e = splin.norm(Y - D.dot(X))
-            print("error:", e)
+            self.tes_.append(e)
+
+            if islog:
+                print("error:", e)
             if e < self.tol:
                 break
             D, X = self._update_dict(Y, D, X)
 
         return D, X
 
-    def fit(self, training_feats, labels, Dinit=None):
-
+    def fit(self, training_feats, labels, Dinit=None, islog=True):
         """
         Input
         ----------
-        training_feats  -training features (shape = [n_samples, n_features])
+        training_
+        feats  -training features (shape = [n_samples, n_features])
         labels          -label matrix for training feature (numberred from 1 to nb of classes)
         Dinit           -initial guess for dictionary
+        islog           -whether log
         """
         training_feats = training_feats.T
 
@@ -109,7 +123,7 @@ class DKSVD(BaseEstimator, ClassifierMixin):
 
         W = np.concatenate((training_feats, H_train), axis=0)
 
-        P, X = self._ksvd_fit(W, Dinit)
+        P, X = self._ksvd_fit(W, Dinit, islog=islog)
         self.D_ = P[:-38, :]
         self.C_ = P[-38:, :]
         self.D_ = normalize(self.D_, axis=0)
@@ -118,21 +132,19 @@ class DKSVD(BaseEstimator, ClassifierMixin):
 
     def predict(self, Y):
         """
-        predict single data
+        predict  data
         """
         Y = Y.T
         X = self._transform(self.D_, Y)
         L = sp.dot(self.C_, X)
+
         return self.classes_[L.argmax(axis=0)]
 
 
-def compute_accuracy(test_x, test_y, model):
-    predict_y = model.predict(test_x)
-    accuracy = sum(predict_y == test_y) / len(test_y)
-    return accuracy
-
-
 def cross_validation(dictsize, p):
+    """
+    another cross validation version
+    """
 
     # data preprocess
     data = Data(p=p)
@@ -148,14 +160,14 @@ def cross_validation(dictsize, p):
 
         val_accuracy = 0.0
         for train_x, val_x, train_y, val_y in data.get_val_test_data():
-            dksvd.fit(train_x, train_y)
+            dksvd.fit(train_x, train_y, islog=islog)
             val_accuracy += compute_accuracy(val_x, val_y, dksvd)
 
         val_accuracy = val_accuracy / 5
         print("val accuracy: ", val_accuracy)
 
         features, labels = data.get_train_data()
-        dksvd.fit(features, labels)
+        dksvd.fit(features, labels, islog=islog)
         test_x, test_y = data.get_test_data()
 
         starttime = time.time()
@@ -187,24 +199,61 @@ if __name__ == "__main__":
 
     dictsizes = [200, 400, 600]
     ps = [7, 13, 20]
+    n_iter = 100
+    tol = 1e-6
+    islog = False
+    n_jobs = 10
     for i in range(len(dictsizes)):
         dictsize = dictsizes[i]
         p = ps[i]
 
         print("dictsize: ", dictsize, "p:", p)
 
+        # 交叉验证选择参数
         param_grid = {
             "dictsize": [dictsize],
-            "n_iter": [100],
-            "tol": [1e-6],
-            "sparsitythres": np.linspace(10, 50, 9).astype(np.int),
+            "n_iter": [n_iter],
+            "tol": [tol],
+            "sparsitythres": np.linspace(10, 50, 1).astype(np.int),
         }
-        fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=1, n_jobs=5)
+        fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=1, n_jobs=n_jobs)
         data = Data(p=p)
         data.preprocess()
         features, labels = data.get_train_data()
 
-        fivefolds.fit(features, labels)
+        fivefolds.fit(features, labels, islog=islog)
 
         print("The best estimator found by GridSearch:")
         print(fivefolds.best_estimator_)
+
+        skvd = DKSVD(
+            dictsize=dictsize,
+            n_iter=n_iter,
+            tol=tol,
+            sparsitythres=fivefolds.best_estimator_.sparsitythres,
+        )
+
+        skvd.fit(features, labels, islog=islog)
+        train_errors = skvd.tes_
+        x = list(range(1, n_iter + 1))
+
+        plt.plot(x, train_errors, "r-x")
+        plt.xlabel("training iterations")
+        plt.ylabel("training error")
+        plt.title("dksvd learning curve")
+        plt.savefig("./results/dksvd-%d-%d" % (dictsize, p))
+        plt.clf()
+
+        # test
+        test_x, test_y = data.get_test_data()
+
+        starttime = time.time()
+        test_accuracy = compute_accuracy(test_x, test_y, fivefolds.best_estimator_)
+        endtime = time.time()
+        speed = (endtime - starttime) / len(test_y)
+
+        print("test accuracy: ", test_accuracy)
+        print("test speed %f s/image" % speed)
+
+        # save models
+        joblib.dump(fivefolds.best_estimator_, "./models/dksvd-%d-%d" % (dictsize, p))
