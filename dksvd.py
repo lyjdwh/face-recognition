@@ -27,18 +27,18 @@ class DKSVD(BaseEstimator, ClassifierMixin):
 
     def _update_dict(self, Y, D, X):
         for j in range(self.dictsize):
-            wk = X[j, :] > 0
-            if sp.sum(wk) == 0:
+            I = X[j, :] > 0
+            if sp.sum(I) == 0:
                 continue
 
             D[:, j] = 0
-            Ekr = Y[:, wk] - D.dot(X[:, wk])
-            u, s, vt = splin.svd(Ekr)
-            d = u[:, 0]
-            d = normalize(d, axis=0)
+            g = X[j, I]
+            r = Y[:, I] - D.dot(X[:, I])
+            d = r.dot(g)
+            d /= splin.norm(d)
+            g = r.T.dot(d)
             D[:, j] = d
-            X[j, :] = sp.dot(vt.T[:, 0], s[0, 0])
-
+            X[j, I] = g.T
         return D, X
 
     def _initialize(self, Y):
@@ -54,12 +54,9 @@ class DKSVD(BaseEstimator, ClassifierMixin):
     def _transform(self, D, Y):
 
         gram = D.T.dot(D)
-
         Xy = D.T.dot(Y)
 
         n_nonzero_coefs = self.sparsitythres
-        if n_nonzero_coefs is None:
-            n_nonzero_coefs = int(0.1 * Y.shape[1])
 
         return orthogonal_mp_gram(
             gram, Xy, copy_Gram=False, copy_Xy=False, n_nonzero_coefs=n_nonzero_coefs
@@ -85,6 +82,7 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         for i in range(self.n_iter):
             X = self._transform(D, Y)
             e = splin.norm(Y - D.dot(X))
+            print("error:", e)
             if e < self.tol:
                 break
             D, X = self._update_dict(Y, D, X)
@@ -104,15 +102,16 @@ class DKSVD(BaseEstimator, ClassifierMixin):
 
         self.classes_, labels = np.unique(labels, return_inverse=True)
 
-        H_train = sp.zeros((int(labels.max()), training_feats.shape[1]), dtype=float)
-        for c in range(int(labels.max())):
+        H_train = sp.zeros((38, training_feats.shape[1]), dtype=float)
+
+        for c in range(38):
             H_train[c, labels == (c + 1)] = 1.0
 
         W = np.concatenate((training_feats, H_train), axis=0)
 
         P, X = self._ksvd_fit(W, Dinit)
-        self.D_ = P[: training_feats.shape[0], :]
-        self.C_ = P[training_feats.shape[0] :, :]
+        self.D_ = P[:-38, :]
+        self.C_ = P[-38:, :]
         self.D_ = normalize(self.D_, axis=0)
         self.C_ = normalize(self.C_, axis=0)
         return self
@@ -121,10 +120,60 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         """
         predict single data
         """
-        Y = Y[np.newaxis, :].T
+        Y = Y.T
         X = self._transform(self.D_, Y)
         L = sp.dot(self.C_, X)
-        return self.classes_[L.argmax(axis=0)][0]
+        return self.classes_[L.argmax(axis=0)]
+
+
+def compute_accuracy(test_x, test_y, model):
+    predict_y = model.predict(test_x)
+    accuracy = sum(predict_y == test_y) / len(test_y)
+    return accuracy
+
+
+def cross_validation(dictsize, p):
+
+    # data preprocess
+    data = Data(p=p)
+    data.preprocess()
+
+    # 交叉验证求最优参数
+    models = []
+    test_accuracys = []
+    sparsitythres = np.linspace(10, 50, 9).astype(np.int)
+    for sparsitythre in sparsitythres:
+
+        dksvd = DKSVD(dictsize=dictsize, n_iter=5, tol=200, sparsitythres=sparsitythre)
+
+        val_accuracy = 0.0
+        for train_x, val_x, train_y, val_y in data.get_val_test_data():
+            dksvd.fit(train_x, train_y)
+            val_accuracy += compute_accuracy(val_x, val_y, dksvd)
+
+        val_accuracy = val_accuracy / 5
+        print("val accuracy: ", val_accuracy)
+
+        features, labels = data.get_train_data()
+        dksvd.fit(features, labels)
+        test_x, test_y = data.get_test_data()
+
+        starttime = time.time()
+        test_accuracy = compute_accuracy(test_x, test_y, dksvd)
+        endtime = time.time()
+        speed = (endtime - starttime) / len(test_y)
+
+        print("test accuracy: ", test_accuracy)
+        print("test speed %f s/image" % speed)
+
+        models.append(dksvd)
+        test_accuracys.append(test_accuracy)
+
+    best_index = test_accuracys.index(max(test_accuracys))
+    best_model = models[best_index]
+    best_sparsitythre = sparsitythres[best_index]
+
+    print("best sparsitythre: ", best_sparsitythre)
 
 
 if __name__ == "__main__":
@@ -135,21 +184,25 @@ if __name__ == "__main__":
     4. 保存模型
     5. 并行
     """
+
     dictsizes = [200, 400, 600]
     ps = [7, 13, 20]
     for i in range(len(dictsizes)):
         dictsize = dictsizes[i]
         p = ps[i]
+
+        print("dictsize: ", dictsize, "p:", p)
+
         param_grid = {
             "dictsize": [dictsize],
-            "n_iter": [50],
+            "n_iter": [100],
             "tol": [1e-6],
-            "sparsitythres": np.linspace(10, 50, 9),
+            "sparsitythres": np.linspace(10, 50, 9).astype(np.int),
         }
-
-        fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=1, n_jobs=10)
+        fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=1, n_jobs=5)
         data = Data(p=p)
-        features, labels = data.get_data()
+        data.preprocess()
+        features, labels = data.get_train_data()
 
         fivefolds.fit(features, labels)
 
