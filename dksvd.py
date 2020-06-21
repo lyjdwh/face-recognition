@@ -201,9 +201,10 @@ if __name__ == "__main__":
     dictsizes = [200, 400, 600]
     ps = [7, 13, 20]
     n_iter = 100
-    tol = 1e-6
-    islog = False
-    n_jobs = 10
+    tol = 1e-6  # tolerance for error
+    islog = False  # whether log when training
+    n_jobs = 10  # Number of jobs to run in parallel.
+    verbose = 0  # Controls the verbosity: the higher, the more messages
     for i in range(len(dictsizes)):
         dictsize = dictsizes[i]
         p = ps[i]
@@ -217,7 +218,7 @@ if __name__ == "__main__":
             "tol": [tol],
             "sparsitythres": np.linspace(10, 50, 1).astype(np.int),
         }
-        fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=1, n_jobs=n_jobs)
+        fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=0, n_jobs=n_jobs)
         data = Data(p=p)
         data.preprocess()
         features, labels = data.get_train_data()
