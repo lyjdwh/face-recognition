@@ -3,6 +3,7 @@ import time
 
 import joblib
 import numpy as np
+import scipy as sp
 import scipy.linalg as splin
 from data import Data
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -41,10 +42,22 @@ class SRC(BaseEstimator, ClassifierMixin):
         predict  data
         """
         Y = Y.T
-        X = self._transform(self.D_, Y)
-        e = splin.norm(Y - self.D_.dot(X))
 
-        return self.classes_[e.argmax(axis=0)]
+        predict_ys = []
+
+        for i in range(Y.shape[1]):
+            y = Y[:, i]  # print(y.shape)
+            x = self._transform(self.D_, y)
+
+            rs = []
+            for j in range(x.shape[0]):
+                e = splin.norm(y - self.D_[:, j] * x[j])
+                rs.append(rs)
+
+            predict_y = self.classes_[rs.index(min(rs))]
+            predict_ys.append(predict_y)
+
+        return np.array(predict_ys)
 
 
 if __name__ == "__main__":
@@ -78,7 +91,7 @@ if __name__ == "__main__":
         print("The best estimator found by GridSearch:")
         print(fivefolds.best_estimator_)
 
-        src = SRC(sparsitythres=fivefolds.best_estimator_.sparsitythres,)
+        src = SRC(sparsitythres=fivefolds.best_estimator_.sparsitythres)
 
         src.fit(features, labels)
 
