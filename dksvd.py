@@ -1,3 +1,4 @@
+import os
 import time
 
 import matplotlib.pyplot as plt
@@ -241,6 +242,9 @@ if __name__ == "__main__":
         plt.xlabel("training iterations")
         plt.ylabel("training error")
         plt.title("dksvd learning curve")
+
+        if not os.path.exists("./results"):
+            os.makedirs("./results")
         plt.savefig("./results/dksvd-%d-%d" % (dictsize, p))
         plt.clf()
 
@@ -256,4 +260,6 @@ if __name__ == "__main__":
         print("test speed %f s/image" % speed)
 
         # save models
+        if not os.path.exists("./models"):
+            os.makedirs("./models")
         joblib.dump(fivefolds.best_estimator_, "./models/dksvd-%d-%d" % (dictsize, p))
