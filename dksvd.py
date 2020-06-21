@@ -1,13 +1,13 @@
 import os
 import time
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 import scipy.linalg as splin
 from data import Data
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.externals import joblib
 from sklearn.linear_model import orthogonal_mp_gram
 from sklearn.model_selection import GridSearchCV, learning_curve
 from sklearn.preprocessing import normalize
