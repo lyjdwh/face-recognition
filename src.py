@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
         # 交叉验证选择参数
         param_grid = {
-            "sparsitythres": np.linspace(10, 50, 1).astype(np.int),
+            "sparsitythres": np.linspace(10, 50, 9).astype(np.int),
         }
         fivefolds = GridSearchCV(SRC(), param_grid, cv=5, verbose=0, n_jobs=n_jobs)
         data = Data(p=p)

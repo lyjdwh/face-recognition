@@ -122,7 +122,8 @@ class DKSVD(BaseEstimator, ClassifierMixin):
         for c in range(38):
             H_train[c, labels == (c + 1)] = 1.0
 
-        W = np.concatenate((training_feats, H_train), axis=0)
+        sqrt_gamma = 2
+        W = np.concatenate((training_feats, sqrt_gamma * H_train), axis=0)
 
         P, X = self._ksvd_fit(W, Dinit, islog=islog)
         self.D_ = P[:-38, :]
@@ -216,7 +217,7 @@ if __name__ == "__main__":
             "dictsize": [dictsize],
             "n_iter": [n_iter],
             "tol": [tol],
-            "sparsitythres": np.linspace(10, 50, 1).astype(np.int),
+            "sparsitythres": np.linspace(10, 50, 9).astype(np.int),
         }
         fivefolds = GridSearchCV(DKSVD(), param_grid, cv=5, verbose=0, n_jobs=n_jobs)
         data = Data(p=p)
